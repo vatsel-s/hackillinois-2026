@@ -1,24 +1,28 @@
-import websockets
-import asyncio
-from dotenv import load_dotenv
+# kalshi_auth.py
 import os
-import datetime
 import base64
-import json
+import datetime
+from dotenv import load_dotenv
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 load_dotenv()
 
-# 1. Clean up the Key from .env
-KALSHI_API_KEY = os.getenv("KALSHI_API_KEY_DEMO")
-raw_key = os.getenv("KALSHI_PRIVATE_KEY_DEMO")
-if not raw_key:
-    print("Error: KALSHI_PRIVATE_KEY_DEMO not found in .env")
-    exit()
+KALSHI_API_KEY = os.getenv("KALSHI_API_KEY")
+raw_key = os.getenv("KALSHI_PRIVATE_KEY")
 
-# Handle potential quoting and escaped newlines
+if not KALSHI_API_KEY:
+    raise EnvironmentError("Error: KALSHI_API_KEY not found in .env")
+if not raw_key:
+    raise EnvironmentError("Error: KALSHI_PRIVATE_KEY not found in .env")
+
 KALSHI_PRIVATE_KEY_STR = raw_key.replace("\\n", "\n").strip('"').strip("'")
+
+def load_private_key_from_env(key_string: str) -> rsa.RSAPrivateKey:
+    return serialization.load_pem_private_key(
+        key_string.encode('utf-8'),
+        password=None
+    )
 
 def sign_pss_text(private_key: rsa.RSAPrivateKey, text: str) -> str:
     message = text.encode('utf-8')
@@ -32,8 +36,13 @@ def sign_pss_text(private_key: rsa.RSAPrivateKey, text: str) -> str:
     )
     return base64.b64encode(signature).decode('utf-8')
 
-def load_private_key_from_env(key_string: str):
-    return serialization.load_pem_private_key(
-        key_string.encode('utf-8'),
-        password=None
-    )
+def build_auth_headers(method: str, path: str) -> dict:
+    """Helper to generate fresh auth headers for any request."""
+    timestamp = str(int(datetime.datetime.now(datetime.timezone.utc).timestamp() * 1000))
+    msg = timestamp + method + path
+    priv_key = load_private_key_from_env(KALSHI_PRIVATE_KEY_STR)
+    return {
+        "KALSHI-ACCESS-KEY": KALSHI_API_KEY,
+        "KALSHI-ACCESS-SIGNATURE": sign_pss_text(priv_key, msg),
+        "KALSHI-ACCESS-TIMESTAMP": timestamp
+    }
