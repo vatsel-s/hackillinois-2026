@@ -8,9 +8,9 @@ def run_test():
     print(f"--- Connecting to Modal Function: {FUNCTION_NAME} ---")
     
     try:
-        score_article = modal.Function.lookup(APP_NAME, FUNCTION_NAME)
+        score_article = modal.Function.from_name(APP_NAME, FUNCTION_NAME)
     except Exception as e:
-        print(f"Could not find function. Ensure your teammate ran: 'modal deploy modaltest.py'")
+        print(f"Could not find function: {e}")
         return
 
     news_feed = [
