@@ -2,3 +2,5 @@ websocket
 modal
 python-dotenv
 cryptography
+transformers
+torch
