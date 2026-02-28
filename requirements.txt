@@ -2,3 +2,6 @@ websocket
 modal
 python-dotenv
 cryptography
+feedparser
+pandas
+requests
