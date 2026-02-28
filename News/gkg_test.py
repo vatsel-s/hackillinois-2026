@@ -28,15 +28,12 @@ def extract_title(extras):
     match = re.search(r'<PAGE_TITLE>(.*?)</PAGE_TITLE>', str(extras))
     return match.group(1) if match else None
 
-
 df["title"] = df[26].apply(extract_title)
 df["tone"] = df[15].apply(lambda x: float(str(x).split(",")[0]) if pd.notna(x) else None)
 df["themes"] = df[7]
 df["url"] = df[4]
 df["persons"] = df[11]
+df["timestamp"] = pd.to_datetime(df[1], format="%Y%m%d%H%M%S")
 
-print(df["title"])
-print(df["tone"])
-print(df["themes"])
-print(df["url"])
-print(df["persons"])
+clean_df = df[["timestamp", "title", "tone", "themes", "persons", "url"]].dropna(subset=["title"])
+print(clean_df.head(10))
