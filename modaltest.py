@@ -1,6 +1,6 @@
 import modal
 
-app = modal.App()
+app = modal.App("finnews-sentiment")
 image = modal.Image.debian_slim().pip_install("transformers", "torch")
 
 @app.function(gpu="A10G", image=image, min_containers=1)
