@@ -7,3 +7,4 @@ torch
 feedparser
 pandas
 requests
+rapidfuzz
