@@ -2,6 +2,8 @@ websocket
 modal
 python-dotenv
 cryptography
+transformers
+torch
 feedparser
 pandas
 requests
