@@ -3,7 +3,7 @@ import modal
 app = modal.App("finnews-sentiment")
 image = modal.Image.debian_slim().pip_install("transformers", "torch")
 
-@app.function(gpu="A10G", image=image, min_containers=1)
+@app.function(name="score-article", gpu="A10G", image=image, min_containers=1)
 def score_article(text: str) -> float:
     from transformers import pipeline
     pipe = pipeline("text-classification", model="ProsusAI/finbert")
