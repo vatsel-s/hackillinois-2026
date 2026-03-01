@@ -35,7 +35,7 @@ def clear_processed(csv_path: str, n_processed: int):
 
 
 def load_articles(csv_path: str) -> list[dict]:
-    with open(csv_path, newline="") as f:
+    with open(csv_path, newline="", encoding = 'utf-8') as f:
         rows = list(csv.DictReader(f))
 
     # Normalize column names so both input.csv and test_articles.csv work
