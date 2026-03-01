@@ -118,7 +118,9 @@ def poll_news(seen_links):
 
     if new_articles:
         df_updates = pd.DataFrame(new_articles).sort_values(by='timestamp', ascending=False).reset_index(drop=True)
-        df_updates.to_csv(CSV_FILE_PATH, mode='a', header=False, index=False)
+        # REMOVE the to_csv line here if you want the Unified Runner to handle the writing
+        return df_updates 
+    
     return pd.DataFrame()
 
 if __name__ == "__main__":
