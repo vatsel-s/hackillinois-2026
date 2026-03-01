@@ -9,3 +9,10 @@ pandas
 requests
 pytz
 python-dateutil
+rapidfuzz
+sentence-transoformers
+time
+os
+re
+datetime
+rapidfuzz
