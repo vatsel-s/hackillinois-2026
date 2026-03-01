@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 
 CSV_PATH = "sentiment_output.csv"
-CSV_COLUMNS = ["timestamp", "source", "headline", "content_header", "link", "ticker", "confidence", "label", "score", "signal"]
+CSV_COLUMNS = ["timestamp", "source", "headline", "content_header", "link", "ticker", "market_title", "confidence", "label", "score", "signal"]
 
 _scorer = None
 
@@ -55,8 +55,9 @@ def score_and_write(articles: list[dict]) -> list[dict]:
                 "headline": article.get("headline", ""),
                 "content_header": article.get("content_header", ""),
                 "link": article.get("link", ""),
-                "ticker": article.get("ticker", "N/A"),       # Preserves ticker
-                "confidence": article.get("confidence", 0.0), # Preserves confidence
+                "ticker": article.get("ticker", "N/A"),
+                "market_title": article.get("market_title", ""),
+                "confidence": article.get("confidence", 0.0),
                 **s,
             }
             writer.writerow(row)
