@@ -1,9 +1,9 @@
 """
-Test script for NLP/sentiment.py — measures end-to-end latency of score_and_write.
+Running script for NLP/sentiment.py — measures end-to-end latency of score_and_write.
 
 Usage:
-    python NLP/test_sentiment.py
-    python NLP/test_sentiment.py --csv NLP/test_articles.csv
+    python NLP/run_sentiment.py
+    python NLP/run_sentiment.py --csv NLP/test_articles.csv
 """
 
 import csv
@@ -20,12 +20,24 @@ from NLP.sentiment import score_and_write
 
 def load_articles(csv_path: str) -> list[dict]:
     with open(csv_path, newline="") as f:
-        return list(csv.DictReader(f))
+        rows = list(csv.DictReader(f))
+
+    # Normalize column names so both input.csv and test_articles.csv work
+    normalized = []
+    for row in rows:
+        normalized.append({
+            "timestamp":      row.get("timestamp", ""),
+            "source":         row.get("source", ""),
+            "headline":       row.get("headline") or row.get("title", ""),
+            "content_header": row.get("content_header", ""),
+            "link":           row.get("link") or row.get("url", ""),
+        })
+    return normalized
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--csv", default="NLP/test_articles.csv")
+    parser.add_argument("--csv", default="input.csv")
     parser.add_argument("--batch-size", type=int, default=None,
                         help="Optionally split into smaller batches to compare latency")
     args = parser.parse_args()

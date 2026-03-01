@@ -46,6 +46,6 @@ def extract_clean_df():
 
 def df_to_csv(): 
     df = extract_clean_df()
-    df.to_csv("sentiment_output.csv", index=False)
+    df.to_csv("input.csv", index=False)
 
 df_to_csv()
