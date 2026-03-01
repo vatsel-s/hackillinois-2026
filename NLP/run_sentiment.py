@@ -24,10 +24,10 @@ def clear_processed(csv_path: str, n_processed: int):
     Rows appended by the news runner while scoring was in progress are preserved.
     """
     try:
-        with open(csv_path, "r", newline="") as f:
+        with open(csv_path, "r", newline="", encoding='utf-8') as f:
             lines = f.readlines()
         remaining = lines[n_processed:]
-        with open(csv_path, "w", newline="") as f:
+        with open(csv_path, "w", newline="", encoding='utf-8') as f:
             f.writelines(remaining)
         print(f"Cleared {n_processed} processed rows ({len(remaining)} remaining in {csv_path})")
     except FileNotFoundError:
@@ -35,7 +35,7 @@ def clear_processed(csv_path: str, n_processed: int):
 
 
 def load_articles(csv_path: str) -> list[dict]:
-    with open(csv_path, newline="") as f:
+    with open(csv_path, newline="", encoding='utf-8') as f:
         rows = list(csv.DictReader(f))
 
     # Normalize column names so both input.csv and test_articles.csv work
@@ -47,6 +47,8 @@ def load_articles(csv_path: str) -> list[dict]:
             "headline":       row.get("headline") or row.get("title", ""),
             "content_header": row.get("content_header", ""),
             "link":           row.get("link") or row.get("url", ""),
+            "ticker":         row.get("ticker") or row.get("matched_ticker", "N/A"),
+            "confidence":     row.get("confidence") or row.get("match_confidence", "0.0")
         })
     return normalized
 
@@ -78,7 +80,9 @@ def main():
               f"({elapsed / len(batch):.3f}s/article)")
         for r in results:
             signal_str = {1: "POSITIVE", -1: "NEGATIVE", 0: "NEUTRAL"}[r["signal"]]
-            print(f"  [{signal_str:8s} {r['score']:.3f}]  {r['headline'][:80]}")
+            ticker = r.get("ticker", "N/A")
+            conf = r.get("confidence", "0.0")
+            print(f"  [{ticker:10s} | {signal_str:8s} {r['score']:.3f}]  {r['headline'][:80]}")
         print()
 
     total = time.perf_counter() - total_start
