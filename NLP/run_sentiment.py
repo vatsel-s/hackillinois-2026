@@ -54,6 +54,9 @@ def load_articles(csv_path: str) -> list[dict]:
     return normalized
 
 
+POLL_INTERVAL = 10  # seconds to wait when input.csv is empty
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--csv", default="input.csv")
@@ -61,42 +64,49 @@ def main():
                         help="Optionally split into smaller batches to compare latency")
     args = parser.parse_args()
 
-    articles = load_articles(args.csv)
-    print(f"Loaded {len(articles)} articles from {args.csv}\n")
+    print(f"Watching {args.csv} for articles to score...")
 
-    if not articles:
-        print("Nothing to score.")
-        return
+    while True:
+        try:
+            articles = load_articles(args.csv)
+        except FileNotFoundError:
+            time.sleep(POLL_INTERVAL)
+            continue
 
-    if args.batch_size:
-        batches = [articles[i:i + args.batch_size]
-                   for i in range(0, len(articles), args.batch_size)]
-    else:
-        batches = [articles]
+        if not articles:
+            time.sleep(POLL_INTERVAL)
+            continue
 
-    total_start = time.perf_counter()
+        print(f"\nLoaded {len(articles)} articles from {args.csv}")
 
-    for i, batch in enumerate(batches):
-        batch_start = time.perf_counter()
-        results = score_and_write(batch)
-        elapsed = time.perf_counter() - batch_start
+        if args.batch_size:
+            batches = [articles[i:i + args.batch_size]
+                       for i in range(0, len(articles), args.batch_size)]
+        else:
+            batches = [articles]
 
-        print(f"Batch {i + 1}/{len(batches)} — {len(batch)} articles in {elapsed:.2f}s "
-              f"({elapsed / len(batch):.3f}s/article)")
-        for r in results:
-            signal_str = {1: "POSITIVE", -1: "NEGATIVE", 0: "NEUTRAL"}[r["signal"]]
-            ticker = r.get("ticker", "N/A")
-            conf = r.get("confidence", "0.0")
-            print(f"  [{ticker:10s} | {signal_str:8s} {r['score']:.3f}]  {r['headline'][:80]}")
-        print()
+        total_start = time.perf_counter()
 
-    total = time.perf_counter() - total_start
-    total_articles = sum(len(b) for b in batches)
-    print(f"Total: {total_articles} articles in {total:.2f}s "
-          f"({total / total_articles:.3f}s/article)")
-    print(f"Results written to: sentiment_output.csv")
+        for i, batch in enumerate(batches):
+            batch_start = time.perf_counter()
+            results = score_and_write(batch)
+            elapsed = time.perf_counter() - batch_start
 
-    clear_processed(args.csv, total_articles)
+            print(f"Batch {i + 1}/{len(batches)} — {len(batch)} articles in {elapsed:.2f}s "
+                  f"({elapsed / len(batch):.3f}s/article)")
+            for r in results:
+                signal_str = {1: "POSITIVE", -1: "NEGATIVE", 0: "NEUTRAL"}[r["signal"]]
+                ticker = r.get("ticker", "N/A")
+                print(f"  [{ticker:10s} | {signal_str:8s} {r['score']:.3f}]  {r['headline'][:80]}")
+            print()
+
+        total = time.perf_counter() - total_start
+        total_articles = sum(len(b) for b in batches)
+        print(f"Total: {total_articles} articles in {total:.2f}s "
+              f"({total / total_articles:.3f}s/article)")
+        print(f"Results written to: sentiment_output.csv")
+
+        clear_processed(args.csv, total_articles)
 
 
 if __name__ == "__main__":
