@@ -1,2 +1,5 @@
 .env
 .venv
+input.csv
+sentiment_output.csv
+seen_links.txt
