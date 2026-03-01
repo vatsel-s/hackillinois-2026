@@ -13,3 +13,5 @@ os
 re
 datetime
 rapidfuzz
+zipfile
+io
