@@ -22,18 +22,30 @@ def get_latest_gkg():
     df = pd.read_csv(z.open(filename), sep="\t", header=None, on_bad_lines="skip")
     return df
 
-df = get_latest_gkg()
 
 def extract_title(extras):
     match = re.search(r'<PAGE_TITLE>(.*?)</PAGE_TITLE>', str(extras))
     return match.group(1) if match else None
 
-df["title"] = df[26].apply(extract_title)
-df["tone"] = df[15].apply(lambda x: float(str(x).split(",")[0]) if pd.notna(x) else None)
-df["themes"] = df[7]
-df["url"] = df[4]
-df["persons"] = df[11]
-df["timestamp"] = pd.to_datetime(df[1], format="%Y%m%d%H%M%S")
+def extract_title(extras):
+    match = re.search(r'<PAGE_TITLE>(.*?)</PAGE_TITLE>', str(extras))
+    return match.group(1) if match else None
 
-clean_df = df[["timestamp", "title", "tone", "themes", "persons", "url"]].dropna(subset=["title"])
-print(clean_df.head(10))
+
+def extract_clean_df():
+    df = get_latest_gkg()
+    df["title"] = df[26].apply(extract_title)
+    df["tone"] = df[15].apply(lambda x: float(str(x).split(",")[0]) if pd.notna(x) else None)
+    df["themes"] = df[7]
+    df["url"] = df[4]
+    df["persons"] = df[11]
+    df["timestamp"] = pd.to_datetime(df[1], format="%Y%m%d%H%M%S")
+
+    clean_df = df[["timestamp", "title", "tone", "themes", "persons", "url"]].dropna(subset=["title"])
+    return clean_df
+
+def df_to_csv(): 
+    df = extract_clean_df()
+    df.to_csv("sentiment_output.csv", index=False)
+
+df_to_csv()
