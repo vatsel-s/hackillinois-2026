@@ -4,7 +4,7 @@ import os
 from datetime import datetime
 
 CSV_PATH = "sentiment_output.csv"
-CSV_COLUMNS = ["timestamp", "source", "headline", "content_header", "link", "label", "score", "signal"]
+CSV_COLUMNS = ["timestamp", "source", "headline", "content_header", "link", "ticker", "confidence", "label", "score", "signal"]
 
 _scorer = None
 
@@ -44,7 +44,7 @@ def score_and_write(articles: list[dict]) -> list[dict]:
 
     write_header = not os.path.exists(CSV_PATH)
     enriched = []
-    with open(CSV_PATH, "a", newline="") as f:
+    with open(CSV_PATH, "a", newline="", encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
         if write_header:
             writer.writeheader()
@@ -55,6 +55,8 @@ def score_and_write(articles: list[dict]) -> list[dict]:
                 "headline": article.get("headline", ""),
                 "content_header": article.get("content_header", ""),
                 "link": article.get("link", ""),
+                "ticker": article.get("ticker", "N/A"),       # Preserves ticker
+                "confidence": article.get("confidence", 0.0), # Preserves confidence
                 **s,
             }
             writer.writerow(row)

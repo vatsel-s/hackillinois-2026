@@ -24,37 +24,32 @@ def clear_processed(csv_path: str, n_processed: int):
     Rows appended by the news runner while scoring was in progress are preserved.
     """
     try:
-        with open(csv_path, "r", newline="") as f:
+        with open(csv_path, "r", newline="", encoding='utf-8') as f:
             lines = f.readlines()
         remaining = lines[n_processed:]
-        with open(csv_path, "w", newline="") as f:
+        with open(csv_path, "w", newline="", encoding='utf-8') as f:
             f.writelines(remaining)
         print(f"Cleared {n_processed} processed rows ({len(remaining)} remaining in {csv_path})")
     except FileNotFoundError:
         pass
 
 def load_articles(csv_path: str) -> list[dict]:
-    articles = []
     with open(csv_path, newline="", encoding='utf-8') as f:
-        reader = csv.DictReader(f)
-        lines = list(reader)
-        for i, row in enumerate(lines):
-            articles.append({
-                "timestamp": row.get("timestamp", ""),
-                "source": row.get("source", ""),
-                "headline": row.get("headline") or row.get("title", ""),
-                "content_header": row.get("content_header", ""),
-                "link": row.get("link") or row.get("url", ""),
-            })
-            if i < len(lines) - 1:
-                os.remove(csv_path)
-                with open(csv_path, 'w', newline='') as f:
-                    writer = csv.DictWriter(f, fieldnames=reader.fieldnames)
-                    writer.writeheader()
-                    writer.writerows(lines[i+1:])
-                with open(csv_path, 'r') as f:
-                    lines = list(csv.DictReader(f))
-    return articles
+        rows = list(csv.DictReader(f))
+
+    # Normalize column names so both input.csv and test_articles.csv work
+    normalized = []
+    for row in rows:
+        normalized.append({
+            "timestamp":      row.get("timestamp", ""),
+            "source":         row.get("source", ""),
+            "headline":       row.get("headline") or row.get("title", ""),
+            "content_header": row.get("content_header", ""),
+            "link":           row.get("link") or row.get("url", ""),
+            "ticker":         row.get("ticker") or row.get("matched_ticker", "N/A"),
+            "confidence":     row.get("confidence") or row.get("match_confidence", "0.0")
+        })
+    return normalized
 
 
 def main():
@@ -84,7 +79,9 @@ def main():
               f"({elapsed / len(batch):.3f}s/article)")
         for r in results:
             signal_str = {1: "POSITIVE", -1: "NEGATIVE", 0: "NEUTRAL"}[r["signal"]]
-            print(f"  [{signal_str:8s} {r['score']:.3f}]  {r['headline'][:80]}")
+            ticker = r.get("ticker", "N/A")
+            conf = r.get("confidence", "0.0")
+            print(f"  [{ticker:10s} | {signal_str:8s} {r['score']:.3f}]  {r['headline'][:80]}")
         print()
 
     total = time.perf_counter() - total_start
