@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import * as THREE from "three";
 
 const GREEN = "#00D166";
+const API = import.meta.env.VITE_API_BASE ?? "";
 
 const PIPELINE_STEPS = [
   {
@@ -16,14 +17,14 @@ const PIPELINE_STEPS = [
     title: "FinBERT Sentiment",
     subtitle: "GPU Inference",
     desc: "A Modal A10G GPU runs ProsusAI/FinBERT. Entire batches score in a single GPU call, returning a label, confidence score, and directional signal.",
-    tag: "modaltest.py",
+    tag: "sentiment.py",
   },
   {
     id: "03",
     title: "Market Matching",
     subtitle: "Semantic Search",
     desc: "SentenceTransformer embeds all open Kalshi markets. Cosine similarity instantly finds the best matching contract for each headline.",
-    tag: "news_runner.py",
+    tag: "ticker_modal.py",
   },
   {
     id: "04",
@@ -35,12 +36,14 @@ const PIPELINE_STEPS = [
 ];
 
 const TECH = [
-  { name: "FinBERT", desc: "Financial NLP" },
-  { name: "Modal", desc: "GPU Cloud" },
-  { name: "Kalshi API", desc: "Prediction Markets" },
-  { name: "SentenceTransformers", desc: "Semantic Matching" },
-  { name: "GDELT GKG", desc: "Global News Feed" },
-  { name: "RSA-PSS", desc: "Auth Signing" },
+  { name: "FinBERT", desc: "ProsusAI/finbert · Financial Sentiment" },
+  { name: "Modal", desc: "A10G + T4 GPU · Serverless Inference" },
+  { name: "Groq", desc: "Llama 3.3 70B · Context-Aware LLM" },
+  { name: "Kalshi API", desc: "RSA-PSS Auth · Limit Order Execution" },
+  { name: "SentenceTransformers", desc: "all-MiniLM-L6-v2 · Market Matching" },
+  { name: "feedparser", desc: "25+ RSS Feeds · Real-Time Ingestion" },
+  { name: "Flask + SSE", desc: "Subprocess Mgmt · Streaming API" },
+  { name: "Three.js + React", desc: "WebGL Particle Field · Frontend" },
 ];
 
 const FAKE_TRADES = [
@@ -105,18 +108,148 @@ function ThreeScene({ canvasRef }) {
   return null;
 }
 
-function LiveFeed() {
-  const [trades, setTrades] = useState(FAKE_TRADES);
-  const [idx, setIdx] = useState(0);
+function TerminalPanel() {
+  const [lines, setLines] = useState(["Waiting for pipeline to start…"]);
+  const containerRef = useRef(null);
+
   useEffect(() => {
-    const id = setInterval(() => {
-      const now = new Date();
-      const ts = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}:${String(now.getSeconds()).padStart(2,"0")}`;
-      setTrades(prev => [{ ...FAKE_TRADES[idx % FAKE_TRADES.length], time: ts }, ...prev].slice(0, 8));
-      setIdx(i => i + 1);
-    }, 2800);
+    const es = new EventSource(`${API}/api/logs`);
+    let buffer = [];
+    es.onmessage = e => {
+      if (e.data === "") return;
+      buffer.push(e.data);
+      if (buffer.length > 200) buffer = buffer.slice(-200);
+      setLines([...buffer]);
+    };
+    es.onerror = () => { es.close(); };
+    return () => es.close();
+  }, []);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [lines]);
+
+  return (
+    <div style={{ background:"#050505", border:"1px solid #111", marginTop:16 }}>
+      <div style={{ display:"flex", gap:6, padding:"12px 16px", borderBottom:"1px solid #0e0e0e", alignItems:"center" }}>
+        {["#FF5F56","#FFBD2E","#27C93F"].map(c => <div key={c} style={{ width:10, height:10, borderRadius:"50%", background:c }} />)}
+        <span style={{ fontFamily:"JetBrains Mono", fontSize:10, color:"#2a2a2a", marginLeft:8 }}>kat — main.py — stdout</span>
+      </div>
+      <div ref={containerRef} style={{ padding:"12px 20px", height:260, overflowY:"auto", fontFamily:"JetBrains Mono", fontSize:11, lineHeight:1.7, color:"#00D166" }}>
+        {lines.map((l, i) => (
+          <div key={i} style={{ whiteSpace:"pre-wrap", wordBreak:"break-all", color: l.startsWith("[decision]") ? "#00D166" : l.startsWith("  >>>") ? "#7EE8A2" : l.includes("Error") || l.includes("FAIL") ? "#FF4560" : "#666" }}>
+            {l || "\u00a0"}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function NewsFeed() {
+  const [newsItems, setNewsItems] = useState([]);
+
+  useEffect(() => {
+    let es;
+    let stopped = false;
+
+    function connect() {
+      if (stopped) return;
+      es = new EventSource(`${API}/api/news/stream`);
+      es.onmessage = (e) => {
+        try {
+          const article = JSON.parse(e.data);
+          setNewsItems(prev => [article, ...prev].slice(0, 50));
+        } catch {}
+      };
+      es.onerror = () => {
+        es.close();
+        if (!stopped) setTimeout(connect, 3000);
+      };
+    }
+
+    connect();
+    return () => { stopped = true; es?.close(); };
+  }, []);
+
+  const decisionColor = (d) => d === "YES" ? GREEN : d === "NO" ? "#FF4560" : "#666";
+
+  return (
+    <div style={{ background:"#050505", border:"1px solid #111", marginBottom:2 }}>
+      <div style={{ display:"flex", gap:6, padding:"12px 16px", borderBottom:"1px solid #0e0e0e", alignItems:"center" }}>
+        {["#FF5F56","#FFBD2E","#27C93F"].map(c => <div key={c} style={{ width:10, height:10, borderRadius:"50%", background:c }} />)}
+        <span style={{ fontFamily:"JetBrains Mono", fontSize:10, color:"#2a2a2a", marginLeft:8 }}>kat — news_feed — live</span>
+        <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:5, fontFamily:"JetBrains Mono", fontSize:9, color:"#333" }}>
+          <div style={{ width:5, height:5, borderRadius:"50%", background: newsItems.length > 0 ? GREEN : "#333", animation: newsItems.length > 0 ? "pulse 1.5s infinite" : "none" }} />
+          {newsItems.length > 0 ? `${newsItems.length} articles` : "loading…"}
+        </div>
+      </div>
+      <div style={{ padding:"4px 20px 8px", fontFamily:"JetBrains Mono", fontSize:10, color:"#444", letterSpacing:1.5, display:"grid", gridTemplateColumns:"76px 1fr 140px 52px", gap:8, borderBottom:"1px solid #0e0e0e" }}>
+        <span>TIME</span><span>HEADLINE</span><span>TICKER</span><span style={{ textAlign:"right" }}>SIG</span>
+      </div>
+      <div style={{ height:180, overflowY:"auto", padding:"4px 20px 8px", fontFamily:"JetBrains Mono", fontSize:11, overflowAnchor:"none" }}>
+        {newsItems.length === 0 ? (
+          <div style={{ color:"#333", padding:"16px 0" }}>Connecting to feed… (start api/index.py if not running)</div>
+        ) : newsItems.map((item, i) => {
+          const ts = Number(item.timestamp);
+          const time = ts ? new Date(ts * 1000).toLocaleTimeString("en-US", { hour12: false }) : "—";
+          const headline = item.headline || "—";
+          const ticker = item.ticker || "—";
+          const decision = item.final_decision || "—";
+          return (
+            <div key={i} style={{ display:"grid", gridTemplateColumns:"76px 1fr 140px 52px", gap:8, padding:"7px 0", borderBottom:"1px solid rgba(0,209,102,0.05)", opacity:Math.max(0.35, 1-i*0.04), alignItems:"center" }}>
+              <span style={{ color:"#555" }}>{time}</span>
+              <span style={{ color:"#aaa", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{headline}</span>
+              <span style={{ color:GREEN, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", fontSize:10 }}>{ticker}</span>
+              <span style={{ color:decisionColor(decision), textAlign:"right", fontWeight:700, fontSize:10 }}>{decision}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function normalizeTrade(row) {
+  // Normalize a row from either the CSV API response or FAKE_TRADES shape
+  const signal = row.final_signal !== undefined
+    ? Number(row.final_signal)
+    : (row.signal !== undefined ? Number(row.signal) : 0);
+  const conf = row.finbert_score !== undefined
+    ? Number(row.finbert_score)
+    : (row.conf !== undefined ? Number(row.conf) : 0);
+  const now = new Date();
+  const ts = row.timestamp || `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}:${String(now.getSeconds()).padStart(2,"0")}`;
+  const time = ts.includes("T") ? ts.split("T")[1].slice(0,8) : ts.slice(0,8);
+  return { time, signal, conf, ticker: row.ticker || "", headline: row.headline || "" };
+}
+
+function LiveFeed({ running }) {
+  const [trades, setTrades] = useState(FAKE_TRADES.map(normalizeTrade));
+
+  const fetchTrades = () => {
+    fetch(`${API}/api/trades`)
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          setTrades(data.slice(0, 8).map(normalizeTrade));
+        }
+      })
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    fetchTrades();
+    const id = setInterval(fetchTrades, 10000);
     return () => clearInterval(id);
-  }, [idx]);
+  }, []);
+
+  // Refresh after a pipeline run completes
+  useEffect(() => {
+    if (!running) fetchTrades();
+  }, [running]);
+
   return (
     <div style={{ fontFamily:"'JetBrains Mono',monospace", fontSize:12 }}>
       {trades.map((t, i) => (
@@ -136,11 +269,68 @@ export default function MainSite() {
   const canvasRef = useRef(null);
   const [scrolled, setScrolled] = useState(false);
   const [activeStep, setActiveStep] = useState(null);
+  const [running, setRunning] = useState(false);
+  const [configured, setConfigured] = useState(false);
+  const [showKeys, setShowKeys] = useState(false);
+  const [keys, setKeys] = useState({ groq_key: "", kalshi_api_key: "", kalshi_private_key: "" });
+  const [saveStatus, setSaveStatus] = useState(null); // null | "ok" | "error"
+  const [showThresholds, setShowThresholds] = useState(false);
+  const [thresholds, setThresholds] = useState({ max_buy_price: 60, profit_target_cents: 7 });
+  const [thresholdStatus, setThresholdStatus] = useState(null); // null | "ok" | "error"
+
   useEffect(() => {
     const fn = () => setScrolled(window.scrollY > 40);
     window.addEventListener("scroll", fn);
     return () => window.removeEventListener("scroll", fn);
   }, []);
+
+  // Poll backend status every 3s; sync thresholds only on the first successful response
+  const thresholdsInitialized = useRef(false);
+  useEffect(() => {
+    const id = setInterval(() => {
+      fetch(`${API}/api/status`)
+        .then(r => r.json())
+        .then(d => {
+          setRunning(d.running);
+          setConfigured(d.configured);
+          if (!thresholdsInitialized.current && d.max_buy_price !== undefined) {
+            setThresholds({ max_buy_price: d.max_buy_price, profit_target_cents: d.profit_target_cents });
+            thresholdsInitialized.current = true;
+          }
+        })
+        .catch(() => {});
+    }, 3000);
+    return () => clearInterval(id);
+  }, []);
+
+  const handleSaveKeys = () => {
+    setSaveStatus(null);
+    fetch(`${API}/api/config`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(keys) })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(d => { setSaveStatus("ok"); setConfigured(d.configured); setShowKeys(false); })
+      .catch(() => setSaveStatus("error"));
+  };
+
+  const handleSaveThresholds = () => {
+    setThresholdStatus(null);
+    const clamped = {
+      max_buy_price: Math.min(99, Math.max(1, Number(thresholds.max_buy_price) || 60)),
+      profit_target_cents: Math.min(99, Math.max(1, Number(thresholds.profit_target_cents) || 7)),
+    };
+    setThresholds(clamped);
+    fetch(`${API}/api/thresholds`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(clamped) })
+      .then(r => r.ok ? r.json() : Promise.reject())
+      .then(d => { setThresholdStatus("ok"); setThresholds({ max_buy_price: d.max_buy_price, profit_target_cents: d.profit_target_cents }); })
+      .catch(() => setThresholdStatus("error"));
+  };
+
+  const handleStart = () => {
+    fetch(`${API}/api/start`, { method: "POST" }).then(() => setRunning(true)).catch(() => {});
+  };
+
+  const handlePause = () => {
+    fetch(`${API}/api/pause`, { method: "POST" }).then(() => setRunning(false)).catch(() => {});
+  };
 
   return (
     <>
@@ -294,7 +484,7 @@ export default function MainSite() {
                 <div style={{ fontFamily:"JetBrains Mono", fontSize:10, color:GREEN, letterSpacing:3, marginBottom:20, textTransform:"uppercase" }}>The Innovation</div>
                 <h3 style={{ fontSize:"clamp(22px,2.5vw,30px)", fontWeight:800, letterSpacing:"-0.5px", marginBottom:16, color:"#fff" }}>Context-Aware LLM</h3>
                 <p style={{ color:"#888", fontSize:15, lineHeight:1.85, marginBottom:28 }}>
-                  KAT adds a second-stage <span style={{ color:"#fff", fontWeight:700 }}>Claude Haiku</span> pass that understands both the headline <span style={{ color:"#ccc" }}>and</span> the specific market question — inferring true directional impact, not just tone.
+                  KAT adds a second-stage <span style={{ color:"#fff", fontWeight:700 }}>Groq / Llama 3.3 70B</span> pass that understands both the headline <span style={{ color:"#ccc" }}>and</span> the specific market question — inferring true directional impact, not just tone.
                 </p>
                 <div style={{ background:"rgba(0,0,0,0.5)", border:"1px solid rgba(0,209,102,0.15)", borderLeft:`3px solid ${GREEN}`, padding:"18px 20px", fontFamily:"JetBrains Mono", fontSize:13 }}>
                   <div style={{ color:"#555", fontSize:10, letterSpacing:2, marginBottom:12, textTransform:"uppercase" }}>Same Headline</div>
@@ -334,8 +524,8 @@ export default function MainSite() {
                 <div style={{ background:"rgba(0,209,102,0.04)", border:"1px solid rgba(0,209,102,0.25)", padding:"22px 24px", position:"relative", overflow:"hidden" }}>
                   <div style={{ position:"absolute", top:0, right:0, width:120, height:120, background:"radial-gradient(circle,rgba(0,209,102,0.07),transparent 70%)", pointerEvents:"none" }} />
                   <div style={{ fontFamily:"JetBrains Mono", fontSize:10, color:GREEN, letterSpacing:2, marginBottom:12, textTransform:"uppercase" }}>Stage 2</div>
-                  <div style={{ fontSize:20, fontWeight:800, color:"#fff", marginBottom:6 }}>Claude Haiku</div>
-                  <div style={{ fontFamily:"JetBrains Mono", fontSize:12, color:GREEN, opacity:.75, marginBottom:16 }}>Context-Aware LLM</div>
+                  <div style={{ fontSize:20, fontWeight:800, color:"#fff", marginBottom:6 }}>Groq / Llama</div>
+                  <div style={{ fontFamily:"JetBrains Mono", fontSize:12, color:GREEN, opacity:.75, marginBottom:16 }}>Llama 3.3 70B · Groq API</div>
                   <div style={{ fontFamily:"JetBrains Mono", fontSize:12, color:"#666", lineHeight:1.8 }}>
                     <div>Input: <span style={{ color:"#aaa" }}>headline + market question</span></div>
                     <div>Output: <span style={{ color:"#aaa" }}>true direction (+1 / 0 / −1)</span></div>
@@ -355,11 +545,91 @@ export default function MainSite() {
                 <div style={{ fontFamily:"JetBrains Mono", fontSize:10, color:GREEN, letterSpacing:3, marginBottom:12, textTransform:"uppercase" }}>// Execution Log</div>
                 <h2 style={{ fontSize:"clamp(26px,4vw,48px)", fontWeight:800, letterSpacing:"-2px" }}>Live Trade Feed</h2>
               </div>
-              <div style={{ display:"flex", alignItems:"center", gap:7, fontFamily:"JetBrains Mono", fontSize:11, color:GREEN }}>
-                <div style={{ width:6, height:6, borderRadius:"50%", background:GREEN, animation:"pulse 1.5s infinite" }} />
-                SIMULATED LIVE
+              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                <button onClick={() => { setShowKeys(s => !s); setShowThresholds(false); }} className="btn-ghost" style={{ padding:"8px 14px", fontSize:11 }}>
+                  ⚙ {configured ? "Keys Set" : "Set Keys"}
+                </button>
+                <button onClick={() => { setShowThresholds(s => !s); setShowKeys(false); }} className="btn-ghost" style={{ padding:"8px 14px", fontSize:11 }}>
+                  ◈ Thresholds
+                </button>
+                {running
+                  ? <button onClick={handlePause} className="btn-ghost" style={{ padding:"8px 18px", fontSize:11, borderColor:"rgba(255,69,96,0.5)", color:"#FF4560" }}>⏸ PAUSE</button>
+                  : <button onClick={handleStart} disabled={!configured} className="btn-ghost" style={{ padding:"8px 18px", fontSize:11, opacity: configured ? 1 : 0.4 }}>▶ START</button>
+                }
+                <div style={{ display:"flex", alignItems:"center", gap:7, fontFamily:"JetBrains Mono", fontSize:11, color: running ? GREEN : "#555" }}>
+                  <div style={{ width:6, height:6, borderRadius:"50%", background: running ? GREEN : "#333", animation: running ? "pulse 1.5s infinite" : "none" }} />
+                  {running ? "LIVE" : "PAUSED"}
+                </div>
               </div>
             </div>
+
+            {/* API Key Config Panel */}
+            {showKeys && (
+              <div style={{ marginBottom:24, background:"#080808", border:"1px solid #1a1a1a", padding:"24px", display:"flex", flexDirection:"column", gap:16 }}>
+                <div style={{ fontFamily:"JetBrains Mono", fontSize:10, color:GREEN, letterSpacing:2, textTransform:"uppercase" }}>// API Keys</div>
+                {[
+                  { label:"Groq API Key", field:"groq_key", type:"password", placeholder:"gsk_..." },
+                  { label:"Kalshi API Key", field:"kalshi_api_key", type:"password", placeholder:"your-kalshi-api-key" },
+                ].map(({ label, field, type, placeholder }) => (
+                  <div key={field} style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                    <label style={{ fontFamily:"JetBrains Mono", fontSize:10, color:"#666", letterSpacing:1.5, textTransform:"uppercase" }}>{label}</label>
+                    <input
+                      type={type}
+                      placeholder={placeholder}
+                      value={keys[field]}
+                      onChange={e => setKeys(k => ({ ...k, [field]: e.target.value }))}
+                      style={{ background:"#000", border:"1px solid #222", color:"#ccc", fontFamily:"JetBrains Mono", fontSize:12, padding:"8px 12px", borderRadius:2, outline:"none" }}
+                    />
+                  </div>
+                ))}
+                <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                  <label style={{ fontFamily:"JetBrains Mono", fontSize:10, color:"#666", letterSpacing:1.5, textTransform:"uppercase" }}>Kalshi Private Key (PEM)</label>
+                  <textarea
+                    rows={5}
+                    placeholder={"-----BEGIN RSA PRIVATE KEY-----\n..."}
+                    value={keys.kalshi_private_key}
+                    onChange={e => setKeys(k => ({ ...k, kalshi_private_key: e.target.value }))}
+                    style={{ background:"#000", border:"1px solid #222", color:"#ccc", fontFamily:"JetBrains Mono", fontSize:11, padding:"8px 12px", borderRadius:2, outline:"none", resize:"vertical" }}
+                  />
+                </div>
+                <div style={{ display:"flex", gap:10, alignItems:"center" }}>
+                  <button onClick={handleSaveKeys} className="btn-primary" style={{ padding:"9px 22px", fontSize:12 }}>Save Keys</button>
+                  {saveStatus === "ok" && <span style={{ fontFamily:"JetBrains Mono", fontSize:11, color:GREEN }}>✓ Saved</span>}
+                  {saveStatus === "error" && <span style={{ fontFamily:"JetBrains Mono", fontSize:11, color:"#FF4560" }}>✗ Error — is the server running?</span>}
+                </div>
+              </div>
+            )}
+
+            {/* Thresholds Panel */}
+            {showThresholds && (
+              <div style={{ marginBottom:24, background:"#080808", border:"1px solid #1a1a1a", padding:"24px", display:"flex", flexDirection:"column", gap:16 }}>
+                <div style={{ fontFamily:"JetBrains Mono", fontSize:10, color:GREEN, letterSpacing:2, textTransform:"uppercase" }}>// Trading Thresholds</div>
+                {[
+                  { label:"Max Buy Price (¢)", field:"max_buy_price", min:1, max:99, help:"Skip buy if market ask exceeds this (1–99¢)" },
+                  { label:"Profit Target (¢)", field:"profit_target_cents", min:1, max:99, help:"Sell when bid ≥ avg cost + this many cents" },
+                ].map(({ label, field, min, max, help }) => (
+                  <div key={field} style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                    <label style={{ fontFamily:"JetBrains Mono", fontSize:10, color:"#666", letterSpacing:1.5, textTransform:"uppercase" }}>{label}</label>
+                    <input
+                      type="number"
+                      min={min}
+                      max={max}
+                      value={thresholds[field]}
+                      onChange={e => setThresholds(t => ({ ...t, [field]: e.target.value === "" ? "" : Number(e.target.value) }))}
+                      style={{ background:"#000", border:"1px solid #222", color:"#ccc", fontFamily:"JetBrains Mono", fontSize:13, padding:"8px 12px", borderRadius:2, outline:"none", width:120 }}
+                    />
+                    <span style={{ fontFamily:"JetBrains Mono", fontSize:10, color:"#444" }}>{help}</span>
+                  </div>
+                ))}
+                <div style={{ display:"flex", gap:10, alignItems:"center" }}>
+                  <button onClick={handleSaveThresholds} className="btn-primary" style={{ padding:"9px 22px", fontSize:12 }}>Save Thresholds</button>
+                  {thresholdStatus === "ok" && <span style={{ fontFamily:"JetBrains Mono", fontSize:11, color:GREEN }}>✓ Saved — takes effect on next Start</span>}
+                  {thresholdStatus === "error" && <span style={{ fontFamily:"JetBrains Mono", fontSize:11, color:"#FF4560" }}>✗ Error — is the server running?</span>}
+                </div>
+              </div>
+            )}
+
+            <NewsFeed />
             <div style={{ background:"#050505", border:"1px solid #111" }}>
               <div style={{ display:"flex", gap:6, padding:"12px 16px", borderBottom:"1px solid #0e0e0e", alignItems:"center" }}>
                 {["#FF5F56","#FFBD2E","#27C93F"].map(c => <div key={c} style={{ width:10, height:10, borderRadius:"50%", background:c }} />)}
@@ -368,8 +638,9 @@ export default function MainSite() {
               <div style={{ padding:"10px 20px 8px", fontFamily:"JetBrains Mono", fontSize:10, color:"#444", letterSpacing:1.5, display:"grid", gridTemplateColumns:"72px 64px 160px 1fr 44px", gap:8, borderBottom:"1px solid #0e0e0e" }}>
                 <span>TIME</span><span>SIG</span><span>TICKER</span><span>HEADLINE</span><span style={{ textAlign:"right" }}>CONF</span>
               </div>
-              <div style={{ padding:"4px 20px 16px" }}><LiveFeed /></div>
+              <div style={{ padding:"4px 20px 16px" }}><LiveFeed running={running} /></div>
             </div>
+            <TerminalPanel />
           </div>
         </section>
 
@@ -405,13 +676,13 @@ export default function MainSite() {
             </div>
             <div style={{ display:"flex", flexDirection:"column", gap:8, flex:"1 1 400px" }}>
               {[
-                { file:"News/rss.py",                     done:true,  desc:"30+ RSS feeds" },
-                { file:"NLP/modaltest.py",                done:true,  desc:"GPU deployment" },
-                { file:"NLP/sentiment.py",                done:true,  desc:"FinBERT API" },
-                { file:"Kalshi/kalshi_auth.py",           done:true,  desc:"RSA auth" },
-                { file:"Kalshi/kalshi_order_executor.py", done:true,  desc:"Order execution" },
-                { file:"Kalshi/ticker_matcher.py",        done:false, desc:"Semantic match" },
-                { file:"main.py",                         done:false, desc:"Orchestration" },
+                { file:"News/rss.py",                     done:true,  desc:"25+ RSS feeds" },
+                { file:"NLP/ticker_modal.py",             done:true,  desc:"Modal GPU · MiniLM embeddings" },
+                { file:"NLP/sentiment.py",                done:true,  desc:"FinBERT · A10G GPU" },
+                { file:"LLM/llm_signal.py",              done:true,  desc:"Groq · Llama 3.3 70B" },
+                { file:"Kalshi/kalshi_auth.py",           done:true,  desc:"RSA-PSS signing" },
+                { file:"Kalshi/kalshi_order_executor.py", done:true,  desc:"Limit order execution" },
+                { file:"main.py",                         done:true,  desc:"Full pipeline orchestration" },
               ].map(f => (
                 <div key={f.file} className="file-row">
                   <span style={{ fontSize:13 }}>{f.done?"✅":"🔨"}</span>

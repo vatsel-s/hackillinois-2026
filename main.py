@@ -20,15 +20,16 @@ from LLM.llm_signal import resolve_signal
 # main.py
 from Kalshi.sell_heartbeat import start_background_heartbeat
 from Kalshi.kalshi_order_executor import execute_order
+from Kalshi.market_utils import get_best_ask
 
 # --------------------------------------------------------------------------
-# Configuration
+# Configuration (overridable via env vars)
 # --------------------------------------------------------------------------
 POLL_INTERVAL_S = 10          # seconds between news polls
 MIN_FINBERT_SCORE = 0.70      # minimum FinBERT confidence to act on
 MIN_TICKER_CONFIDENCE = 0.40  # minimum ticker match confidence to act on
 TRADE_QUANTITY = 1            # Number of contracts to buy per signal
-EXECUTION_PRICE = 60
+EXECUTION_PRICE = int(os.environ.get("MAX_BUY_PRICE", "60"))  # max cents willing to pay
 
 # --------------------------------------------------------------------------
 # Main loop
@@ -125,13 +126,18 @@ def main():
             # --- EXECUTION LOGIC ---
             if final_signal != 0:
                 print(f"  >>> SIGNAL DETECTED: Initiating Buy for {side.upper()}...")
-                
-                # A. Get current market price (Ask) to ensure fill
+
                 side_real = "yes" if final_signal == 1 else "no"
                 execution_price = EXECUTION_PRICE
-                
+
+                # A. Check current market ask against our max buy price
+                best_ask = get_best_ask(ticker, side_real)
+                if best_ask is not None and best_ask > EXECUTION_PRICE:
+                    print(f"  >>> SKIPPING: Ask ({best_ask}¢) > Max Buy Price ({EXECUTION_PRICE}¢).")
+                    continue
+
                 if execution_price:
-                    print(f"  >>> Market Ask Found: {execution_price}¢")
+                    print(f"  >>> Placing limit buy at {execution_price}¢ (ask={best_ask}¢)")
                     
                     try:
                         # B. Place the Order

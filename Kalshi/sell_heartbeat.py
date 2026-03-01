@@ -1,3 +1,4 @@
+import os
 import time
 import requests
 import json
@@ -7,9 +8,9 @@ import threading
 # Note the dot (.) before kalshi_order_executor
 from .kalshi_order_executor import execute_order, get_kalshi_auth_headers, BASE_URL
 
-# Configuration
+# Configuration (overridable via env vars)
 HEARTBEAT_INTERVAL = 10  # Seconds
-PROFIT_TARGET_CENTS = 7   # Sell if Bid >= Avg Price + 7 cents
+PROFIT_TARGET_CENTS = int(os.environ.get("PROFIT_TARGET_CENTS", "7"))  # sell when bid >= avg + N cents
 
 def get_portfolio_data():
     """Fetches the full portfolio JSON."""
