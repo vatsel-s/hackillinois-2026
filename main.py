@@ -4,12 +4,12 @@ Main orchestration loop for the HackIllinois 2026 Kalshi trading algorithm.
 Pipeline (every 10s):
   1. poll_news()         — fetch new headlines from 30+ RSS feeds
   2. match_tickers()     — match each headline to a Kalshi market (Modal GPU)
-  3. score_and_write()   — FinBERT sentiment via Modal GPU (label/score/signal)
-                           results appended to sentiment_output.csv
+  3. score_articles()    — FinBERT sentiment via Modal GPU (finbert_label/score/signal)
   4. resolve_signal()    — LLM direction inference (Groq + Llama 3.3 70B)
                            • financial markets → use FinBERT signal directly
                            • political/sports/other → use LLM for context-aware direction
-  5. print decision      — output to terminal (Kalshi order execution coming soon)
+  5. write_decisions()   — append full row (all 16 fields) to sentiment_output.csv
+  6. print decision      — output to terminal (Kalshi order execution coming soon)
 
 Signal routing:
   | Market type      | Signal source  |
@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from News.rss import poll_news, load_seen_links
 from NLP.ticker_modal import match_tickers
-from NLP.sentiment import score_and_write
+from NLP.sentiment import score_articles, write_decisions
 from LLM.llm_signal import resolve_signal
 
 # --------------------------------------------------------------------------
@@ -74,29 +74,27 @@ def main():
             time.sleep(POLL_INTERVAL_S)
             continue
 
-        market_title_map = {}
         for article, match in zip(articles, ticker_matches):
             article["ticker"] = match["ticker"]
             article["market_title"] = match["market_title"]
             article["confidence"] = match["confidence"]
-            market_title_map[article["headline"]] = match["market_title"]
 
-        # --- 3. Score with FinBERT, write to sentiment_output.csv ---
+        # --- 3. Score with FinBERT (no CSV write yet) ---
         try:
-            scored = score_and_write(articles)
+            scored = score_articles(articles)
         except Exception as e:
             print(f"[nlp]  Error scoring articles: {e}")
             time.sleep(POLL_INTERVAL_S)
             continue
 
-        # --- 4 & 5. Resolve signal and print decision ---
+        # --- 4, 5, 6. LLM signal → write full row → print decision ---
         for row in scored:
-            headline = row["headline"]
-            finbert_signal = row["signal"]
-            finbert_score = row["score"]
-            ticker = row.get("ticker", "N/A")
-            market_title = row.get("market_title", "")
-            ticker_confidence = float(row.get("confidence", 0.0))
+            headline          = row["headline"]
+            finbert_signal    = row["finbert_signal"]
+            finbert_score     = row["finbert_score"]
+            ticker            = row["ticker"]
+            market_title      = row["market_title"]
+            ticker_confidence = row["ticker_confidence"]
 
             # Skip low-confidence or neutral results
             if finbert_score < MIN_FINBERT_SCORE:
@@ -115,12 +113,22 @@ def main():
             final_signal = direction["signal"]
             side = "YES" if final_signal == 1 else ("NO" if final_signal == -1 else "SKIP")
 
+            # Write complete row to sentiment_output.csv
+            write_decisions([{
+                **row,
+                "llm_signal":     direction["signal"],
+                "llm_source":     direction["source"],
+                "llm_reasoning":  direction["reasoning"],
+                "final_signal":   final_signal,
+                "final_decision": side,
+            }])
+
             print(
                 f"\n[decision] {side}  |  {ticker}  (ticker conf: {ticker_confidence:.2f})"
             )
             print(f"  headline:  {headline[:80]}")
             print(f"  market:    {market_title[:80]}")
-            print(f"  finbert:   {row['label']} {finbert_score:.3f}  signal={finbert_signal:+d}")
+            print(f"  finbert:   {row['finbert_label']} {finbert_score:.3f}  signal={finbert_signal:+d}")
             print(f"  llm/src:   {direction['source']}  signal={final_signal:+d}")
             print(f"  reason:    {direction['reasoning']}")
 
