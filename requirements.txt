@@ -12,3 +12,4 @@ python-dateutil
 groq
 pmxt
 sentence_transformers
+redis
