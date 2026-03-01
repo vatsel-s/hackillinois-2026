@@ -7,6 +7,8 @@ torch
 feedparser
 pandas
 requests
+pytz
+python-dateutil
 rapidfuzz
 sentence-transoformers
 time

@@ -5,6 +5,8 @@ import io
 from datetime import datetime, timezone
 import re
 
+CSV_FILE_PATH = "input.csv"
+
 def get_latest_gkg():
     # GDELT updates every 15 min at :00, :15, :30, :45
     now = datetime.now(timezone.utc)
@@ -22,21 +24,29 @@ def get_latest_gkg():
     df = pd.read_csv(z.open(filename), sep="\t", header=None, on_bad_lines="skip")
     return df
 
-df = get_latest_gkg()
+
+def extract_title(extras):
+    match = re.search(r'<PAGE_TITLE>(.*?)</PAGE_TITLE>', str(extras))
+    return match.group(1) if match else None
 
 def extract_title(extras):
     match = re.search(r'<PAGE_TITLE>(.*?)</PAGE_TITLE>', str(extras))
     return match.group(1) if match else None
 
 
-df["title"] = df[26].apply(extract_title)
-df["tone"] = df[15].apply(lambda x: float(str(x).split(",")[0]) if pd.notna(x) else None)
-df["themes"] = df[7]
-df["url"] = df[4]
-df["persons"] = df[11]
+def extract_clean_df():
+    df = get_latest_gkg()
+    df["title"] = df[26].apply(extract_title)
+    df["timestamp"] = pd.to_datetime(df[1], format="%Y%m%d%H%M%S")
+    df["themes"] = df[7]
 
-print(df["title"])
-print(df["tone"])
-print(df["themes"])
-print(df["url"])
-print(df["persons"])
+    clean_df = df[[ "timestamp", "title", "themes"]].dropna(subset=["title"])
+    return clean_df
+
+def df_to_csv():
+    df = extract_clean_df()
+    df.to_csv(CSV_FILE_PATH, mode='a', header=False, index=False)
+
+
+if __name__ == "__main__":
+    df_to_csv()
