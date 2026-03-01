@@ -26,9 +26,11 @@ def clear_processed(csv_path: str, n_processed: int):
     try:
         with open(csv_path, "r", newline="", encoding='utf-8') as f:
             lines = f.readlines()
-        remaining = lines[n_processed:]
+        # lines[0] is the header; skip the first n_processed data rows after it
+        header = lines[:1]
+        remaining = lines[1 + n_processed:]
         with open(csv_path, "w", newline="", encoding='utf-8') as f:
-            f.writelines(remaining)
+            f.writelines(header + remaining)
         print(f"Cleared {n_processed} processed rows ({len(remaining)} remaining in {csv_path})")
     except FileNotFoundError:
         pass
@@ -61,6 +63,10 @@ def main():
 
     articles = load_articles(args.csv)
     print(f"Loaded {len(articles)} articles from {args.csv}\n")
+
+    if not articles:
+        print("Nothing to score.")
+        return
 
     if args.batch_size:
         batches = [articles[i:i + args.batch_size]

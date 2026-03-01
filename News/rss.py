@@ -106,8 +106,10 @@ def poll_news(seen_links):
 
                     new_articles.append({
                         "timestamp": int(dt_obj.timestamp()),
-                        "title": entry.title,
-                        "content": content_clean[:500].strip(),
+                        "source":    source_name,
+                        "title":     entry.title,
+                        "content":   content_clean[:500].strip(),
+                        "link":      link,
                     })
                     
                     seen_links.add(link)
