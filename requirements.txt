@@ -8,10 +8,9 @@ feedparser
 pandas
 requests
 rapidfuzz
+sentence-transoformers
 time
 os
 re
 datetime
 rapidfuzz
-zipfile
-io
