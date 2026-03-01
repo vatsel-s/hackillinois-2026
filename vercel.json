@@ -1,13 +1,5 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "Frontend/HackIllinois-2026/package.json",
-      "use": "@vercel/static-build",
-      "config": { "distDir": "dist" }
-    }
-  ],
-  "routes": [
-    { "src": "/(.*)", "dest": "Frontend/HackIllinois-2026/dist/$1" }
-  ]
+  "buildCommand": "cd Frontend/HackIllinois-2026 && npm install && npm run build",
+  "outputDirectory": "Frontend/HackIllinois-2026/dist",
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }
