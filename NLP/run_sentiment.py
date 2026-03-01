@@ -33,7 +33,6 @@ def clear_processed(csv_path: str, n_processed: int):
     except FileNotFoundError:
         pass
 
-
 def load_articles(csv_path: str) -> list[dict]:
     with open(csv_path, newline="", encoding='utf-8') as f:
         rows = list(csv.DictReader(f))
