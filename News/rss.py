@@ -5,6 +5,8 @@ import os
 import re
 from datetime import datetime, timedelta, timezone
 
+CSV_FILE_PATH = "output.csv"
+
 # Filtered Source List (Reuters and AP removed)
 NEWS_FEEDS = {
     # General / Home
@@ -99,12 +101,9 @@ def poll_news(seen_links):
                     content_clean = clean_html(content_raw)
 
                     new_articles.append({
-                        "source": source_name,
+                        "timestamp": int(dt_obj.timestamp()),
                         "headline": entry.title,
                         "content_header": content_clean[:500].strip(),
-                        "date": dt_obj.strftime('%Y-%m-%d %H:%M:%S'),
-                        "timestamp": int(dt_obj.timestamp()),
-                        "link": link
                     })
                     
                     seen_links.add(link)
@@ -114,7 +113,8 @@ def poll_news(seen_links):
                 continue
 
     if new_articles:
-        return pd.DataFrame(new_articles).sort_values(by='timestamp', ascending=False).reset_index(drop=True)
+        df_updates = pd.DataFrame(new_articles).sort_values(by='timestamp', ascending=False).reset_index(drop=True)
+        df_updates.to_csv(CSV_FILE_PATH, mode='a', header=False, index=False)
     return pd.DataFrame()
 
 if __name__ == "__main__":
