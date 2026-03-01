@@ -5,6 +5,8 @@ import io
 from datetime import datetime, timezone
 import re
 
+CSV_FILE_PATH = "input.csv"
+
 def get_latest_gkg():
     # GDELT updates every 15 min at :00, :15, :30, :45
     now = datetime.now(timezone.utc)
@@ -35,17 +37,15 @@ def extract_title(extras):
 def extract_clean_df():
     df = get_latest_gkg()
     df["title"] = df[26].apply(extract_title)
-    df["tone"] = df[15].apply(lambda x: float(str(x).split(",")[0]) if pd.notna(x) else None)
-    df["themes"] = df[7]
-    df["url"] = df[4]
-    df["persons"] = df[11]
     df["timestamp"] = pd.to_datetime(df[1], format="%Y%m%d%H%M%S")
+    df["themes"] = df[7]
 
-    clean_df = df[["timestamp", "title", "tone", "themes", "persons", "url"]].dropna(subset=["title"])
+    clean_df = df[[ "timestamp", "title", "themes"]].dropna(subset=["title"])
     return clean_df
 
 def df_to_csv(): 
     df = extract_clean_df()
-    df.to_csv("input.csv", index=False)
+    df.to_csv(CSV_FILE_PATH, mode='a', header=False, index=False)
+
 
 df_to_csv()
