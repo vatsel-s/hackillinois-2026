@@ -2,7 +2,7 @@ import uuid
 import json
 import requests
 import os
-from kalshi_auth import get_kalshi_auth_headers
+from .kalshi_auth import get_kalshi_auth_headers
 
 # Ensure this matches your environment (Production vs Demo)
 BASE_URL = "https://api.elections.kalshi.com" 

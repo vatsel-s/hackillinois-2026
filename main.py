@@ -1,49 +1,45 @@
 """
 Main orchestration loop for the HackIllinois 2026 Kalshi trading algorithm.
-
-Pipeline (every 10s):
-  1. poll_news()         — fetch new headlines from 30+ RSS feeds
-  2. match_tickers()     — match each headline to a Kalshi market (Modal GPU)
-  3. score_articles()    — FinBERT sentiment via Modal GPU (finbert_label/score/signal)
-  4. resolve_signal()    — LLM direction inference (Groq + Llama 3.3 70B)
-                           • financial markets → use FinBERT signal directly
-                           • political/sports/other → use LLM for context-aware direction
-  5. write_decisions()   — append full row (all 16 fields) to sentiment_output.csv
-  6. print decision      — output to terminal (Kalshi order execution coming soon)
-
-Signal routing:
-  | Market type      | Signal source  |
-  |------------------|----------------|
-  | Financial/macro  | FinBERT        |
-  | Political/sports | LLM (Groq)     |
-
-Trade is skipped if: finbert_score < 0.70, signal == 0, or ticker confidence < 0.30.
+Integrated with Order Execution and Portfolio Heartbeat.
 """
 
 import time
 import sys
 import os
+import threading
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# --- Existing Imports ---
 from News.rss import poll_news, load_seen_links
 from NLP.ticker_modal import match_tickers
 from NLP.sentiment import score_articles, write_decisions
 from LLM.llm_signal import resolve_signal
+
+# --- New Trading Imports ---
+# main.py
+from Kalshi.sell_heartbeat import start_background_heartbeat
+from Kalshi.kalshi_order_executor import execute_order
 
 # --------------------------------------------------------------------------
 # Configuration
 # --------------------------------------------------------------------------
 POLL_INTERVAL_S = 10          # seconds between news polls
 MIN_FINBERT_SCORE = 0.70      # minimum FinBERT confidence to act on
-MIN_TICKER_CONFIDENCE = 0.30  # minimum ticker match confidence to act on
-
+MIN_TICKER_CONFIDENCE = 0.40  # minimum ticker match confidence to act on
+TRADE_QUANTITY = 1            # Number of contracts to buy per signal
+EXECUTION_PRICE = 60
 
 # --------------------------------------------------------------------------
 # Main loop
 # --------------------------------------------------------------------------
 def main():
     print("Starting HackIllinois 2026 trading loop...")
+    
+    # 1. Mount the Heartbeat (Runs in background thread)
+    print("[system] Mounting Portfolio Heartbeat...")
+    start_background_heartbeat()
+    
     seen = load_seen_links()
 
     while True:
@@ -56,12 +52,13 @@ def main():
             continue
 
         if df.empty:
+            # Heartbeat is still running in background while we wait
             time.sleep(POLL_INTERVAL_S)
             continue
 
         print(f"[news] {len(df)} new article(s)")
 
-        # Normalize column names to match downstream expectations
+        # Normalize column names
         df = df.rename(columns={"title": "headline", "content": "content_header"})
         articles = df.to_dict("records")
 
@@ -79,7 +76,7 @@ def main():
             article["market_title"] = match["market_title"]
             article["confidence"] = match["confidence"]
 
-        # --- 3. Score with FinBERT (no CSV write yet) ---
+        # --- 3. Score with FinBERT ---
         try:
             scored = score_articles(articles)
         except Exception as e:
@@ -87,23 +84,21 @@ def main():
             time.sleep(POLL_INTERVAL_S)
             continue
 
-        # --- 4, 5, 6. LLM signal → write full row → print decision ---
+        # --- 4, 5, 6. LLM signal → Write CSV → EXECUTE TRADE ---
         for row in scored:
-            headline          = row["headline"]
-            finbert_signal    = row["finbert_signal"]
-            finbert_score     = row["finbert_score"]
-            ticker            = row["ticker"]
-            market_title      = row["market_title"]
+            headline      = row["headline"]
+            finbert_signal = row["finbert_signal"]
+            finbert_score  = row["finbert_score"]
+            ticker         = row["ticker"]
+            market_title   = row["market_title"]
             ticker_confidence = row["ticker_confidence"]
 
-            # Skip low-confidence or neutral results
-            if finbert_score < MIN_FINBERT_SCORE:
-                continue
-            if finbert_signal == 0:
-                continue
-            if ticker_confidence < MIN_TICKER_CONFIDENCE:
-                continue
+            # Filter weak signals
+            if finbert_score < MIN_FINBERT_SCORE: continue
+            if finbert_signal == 0: continue
+            if ticker_confidence < MIN_TICKER_CONFIDENCE: continue
 
+            # Resolve Direction
             direction = resolve_signal(
                 headline=headline,
                 market_question=market_title,
@@ -111,34 +106,52 @@ def main():
             )
 
             final_signal = direction["signal"]
-            side = "YES" if final_signal == 1 else ("NO" if final_signal == -1 else "SKIP")
-
-            # Write complete row to sentiment_output.csv
+            side = "yes" if final_signal == 1 else ("no" if final_signal == -1 else "SKIP")
+            
+            # Write to CSV (Monitoring Log)
             write_decisions([{
                 **row,
                 "llm_signal":     direction["signal"],
                 "llm_source":     direction["source"],
                 "llm_reasoning":  direction["reasoning"],
                 "final_signal":   final_signal,
-                "final_decision": side,
+                "final_decision": side.upper(),
             }])
 
-            print(
-                f"\n[decision] {side}  |  {ticker}  (ticker conf: {ticker_confidence:.2f})"
-            )
-            print(f"  headline:  {headline[:80]}")
-            print(f"  market:    {market_title[:80]}")
-            print(f"  finbert:   {row['finbert_label']} {finbert_score:.3f}  signal={finbert_signal:+d}")
-            print(f"  llm/src:   {direction['source']}  signal={final_signal:+d}")
-            print(f"  reason:    {direction['reasoning']}")
+            # Print Decision
+            print(f"\n[decision] {side.upper()} | {ticker} (conf: {ticker_confidence:.2f})")
+            print(f"  Reason: {direction['reasoning']}")
 
-            if final_signal == 0:
-                continue  # No clear edge — skip
-
-            # TODO: place_limit_order(ticker, side.lower(), count, price_cents)
-
+            # --- EXECUTION LOGIC ---
+            if final_signal != 0:
+                print(f"  >>> SIGNAL DETECTED: Initiating Buy for {side.upper()}...")
+                
+                # A. Get current market price (Ask) to ensure fill
+                side_real = "yes" if final_signal == 1 else "no"
+                execution_price = EXECUTION_PRICE
+                
+                if execution_price:
+                    print(f"  >>> Market Ask Found: {execution_price}¢")
+                    
+                    try:
+                        # B. Place the Order
+                        order_response = execute_order(
+                            ticker=ticker,
+                            action="buy",
+                            side=side,
+                            count=TRADE_QUANTITY,
+                            type="limit",
+                            price=execution_price
+                        )
+                        print(f"  >>> ORDER SENT! ID: {order_response.get('order', {}).get('order_id')}")
+                        
+                    except Exception as exc:
+                        print(f"  >>> EXECUTION FAILED: {exc}")
+                else:
+                    print(f"  >>> SKIPPING: No liquidity (Ask price not found).")
+            
+        # Loop delay
         time.sleep(POLL_INTERVAL_S)
-
 
 if __name__ == "__main__":
     main()

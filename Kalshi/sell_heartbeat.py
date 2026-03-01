@@ -2,8 +2,10 @@ import time
 import requests
 import json
 from datetime import datetime
+import threading
 # Ensure these imports match your file structure
-from kalshi_order_executor import execute_order, get_kalshi_auth_headers, BASE_URL
+# Note the dot (.) before kalshi_order_executor
+from .kalshi_order_executor import execute_order, get_kalshi_auth_headers, BASE_URL
 
 # Configuration
 HEARTBEAT_INTERVAL = 10  # Seconds
@@ -111,5 +113,12 @@ def run_heartbeat():
 
         time.sleep(HEARTBEAT_INTERVAL)
 
+def start_background_heartbeat():
+    """Starts the heartbeat loop in a non-blocking daemon thread."""
+    thread = threading.Thread(target=run_heartbeat, daemon=True)
+    thread.start()
+    return thread
+
 if __name__ == "__main__":
     run_heartbeat()
+
