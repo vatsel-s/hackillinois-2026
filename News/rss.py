@@ -127,7 +127,7 @@ if __name__ == "__main__":
         if not df_updates.empty:
             print(f"\n🔔 {len(df_updates)} New Events Detected:")
             print(df_updates[['source', 'headline', 'timestamp']].head(10).to_string(index=False))
-            
+            df_updates.to_csv("news_updates.csv", mode='a', header=False, index=False)
             # TODO: Your Modal logic here
             # response = modal_function.remote(df_updates.to_dict('records'))
         else:
