@@ -1,5 +1,3 @@
 {
-  "buildCommand": "cd Frontend/HackIllinois-2026 && npm install && npm run build",
-  "outputDirectory": "Frontend/HackIllinois-2026/dist",
   "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
 }
