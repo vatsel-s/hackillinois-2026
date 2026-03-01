@@ -33,22 +33,28 @@ def clear_processed(csv_path: str, n_processed: int):
     except FileNotFoundError:
         pass
 
-
 def load_articles(csv_path: str) -> list[dict]:
-    with open(csv_path, newline="", encoding = 'utf-8') as f:
-        rows = list(csv.DictReader(f))
-
-    # Normalize column names so both input.csv and test_articles.csv work
-    normalized = []
-    for row in rows:
-        normalized.append({
-            "timestamp":      row.get("timestamp", ""),
-            "source":         row.get("source", ""),
-            "headline":       row.get("headline") or row.get("title", ""),
-            "content_header": row.get("content_header", ""),
-            "link":           row.get("link") or row.get("url", ""),
-        })
-    return normalized
+    articles = []
+    with open(csv_path, newline="", encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        lines = list(reader)
+        for i, row in enumerate(lines):
+            articles.append({
+                "timestamp": row.get("timestamp", ""),
+                "source": row.get("source", ""),
+                "headline": row.get("headline") or row.get("title", ""),
+                "content_header": row.get("content_header", ""),
+                "link": row.get("link") or row.get("url", ""),
+            })
+            if i < len(lines) - 1:
+                os.remove(csv_path)
+                with open(csv_path, 'w', newline='') as f:
+                    writer = csv.DictWriter(f, fieldnames=reader.fieldnames)
+                    writer.writeheader()
+                    writer.writerows(lines[i+1:])
+                with open(csv_path, 'r') as f:
+                    lines = list(csv.DictReader(f))
+    return articles
 
 
 def main():
