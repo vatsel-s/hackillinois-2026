@@ -9,7 +9,4 @@ feedparser
 pytz
 python-dateutil
 modal
-sentence_transformers
-transformers
-torch
 websocket-client
