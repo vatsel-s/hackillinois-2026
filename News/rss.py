@@ -1,371 +1,282 @@
-# news_monitor.py
 import feedparser
 import pandas as pd
 import time
 import os
 import re
-import requests
+import json
+import torch
+import pmxt
 from datetime import datetime, timedelta, timezone
-from rapidfuzz import process, fuzz
+from sentence_transformers import SentenceTransformer, util
 
 # --- CONFIGURATION ---
-CSV_FILE       = "news_log.csv"
-KALSHI_API_BASE = "https://api.elections.kalshi.com/trade-api/v2"
-POLL_INTERVAL  = 20
-MARKET_LIMIT   = 1000
-MATCH_THRESHOLD = 58   # lower = more matches, higher = more precision
+CSV_FILE = "news_log.csv"
+POLL_INTERVAL = 30  # Interval to check feeds in seconds
 
+# AI Model Configuration
+EMBEDDINGS_FILE = "News/model/market_embeddings.pt"
+METADATA_FILE = "News/model/market_metadata.json"
+MODEL_NAME = 'all-MiniLM-L6-v2' 
+
+# Aggregated Source List
 NEWS_FEEDS = {
-    "BBC Home":          "https://feeds.bbci.co.uk/news/rss.xml",
-    "NYT Home":          "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
-    "NPR":               "https://feeds.npr.org/1001/rss.xml",
-    "The Hill":          "https://thehill.com/rss/syndicator/19110",
-    "NYT Politics":      "https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml",
-    "The Hill Politics": "https://thehill.com/homenews/feed",
-    "Politico":          "https://www.politico.com/rss/politicopicks.xml",
-    "WashPost Politics": "https://feeds.washingtonpost.com/rss/politics",
-    "CNBC Business":     "https://www.cnbc.com/id/100003114/device/rss/rss.html",
-    "MarketWatch":       "https://feeds.marketwatch.com/marketwatch/topstories",
-    "Yahoo Finance":     "https://finance.yahoo.com/rss/",
-    "CNBC Macro":        "https://www.cnbc.com/id/20910258/device/rss/rss.html",
-    "Bloomberg Markets": "https://feeds.bloomberg.com/markets/news.rss",
-    "CoinDesk":          "https://coindesk.com/arc/outboundfeeds/rss/",
-    "CoinTelegraph":     "https://cointelegraph.com/rss",
-    "Decrypt":           "https://decrypt.co/feed",
-    "BBC World":         "https://feeds.bbci.co.uk/news/world/rss.xml",
-    "NYT World":         "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
-    "NYT Tech":          "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",
-    "TechCrunch":        "https://techcrunch.com/feed/",
-    "The Verge":         "https://www.theverge.com/rss/index.xml",
-    "ESPN":              "https://www.espn.com/espn/rss/news",
-    "Yahoo Sports":      "https://sports.yahoo.com/rss/",
-    "WSJ Opinion":       "https://feeds.content.dowjones.io/public/rss/RSSOpinion",
-    "WSJ World":         "https://feeds.content.dowjones.io/public/rss/RSSWorldNews",
-    "WSJ US Business":   "https://feeds.content.dowjones.io/public/rss/WSJcomUSBusiness",
-    "WSJ Markets":       "https://feeds.content.dowjones.io/public/rss/RSSMarketsMain",
-    "WSJ Tech":          "https://feeds.content.dowjones.io/public/rss/RSSWSJD",
-    "WSJ US":            "https://feeds.content.dowjones.io/public/rss/RSSUSnews",
-    "WSJ Politics":      "https://feeds.content.dowjones.io/public/rss/socialpoliticsfeed",
-    "WSJ Economy":       "https://feeds.content.dowjones.io/public/rss/socialeconomyfeed",
-    "WSJ Sports":        "https://feeds.content.dowjones.io/public/rss/rsssportsfeed",
+    "NYT Home": "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml",
+    # "NPR": "https://feeds.npr.org/1001/rss.xml",
+    # "The Hill": "https://thehill.com/rss/syndicator/19110",
+    # "NYT Politics": "https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml",
+    # "The Hill Politics": "https://thehill.com/homenews/feed",
+    # "Politico": "https://www.politico.com/rss/politicopicks.xml",
+    # "WashPost Politics": "https://feeds.washingtonpost.com/rss/politics",
+    # "CNBC Business": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+    # "MarketWatch": "https://feeds.marketwatch.com/marketwatch/topstories",
+    # "Yahoo Finance": "https://finance.yahoo.com/rss/",
+    # "CNBC Macro": "https://www.cnbc.com/id/20910258/device/rss/rss.html",
+    # "Bloomberg Markets": "https://feeds.bloomberg.com/markets/news.rss",
+    # "CoinDesk": "https://coindesk.com/arc/outboundfeeds/rss/",
+    # "CoinTelegraph": "https://cointelegraph.com/rss",
+    # "Decrypt": "https://decrypt.co/feed",
+    # "BBC World": "https://feeds.bbci.co.uk/news/world/rss.xml",
+    # "NYT World": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
+    # "NYT Tech": "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml",
+    # "TechCrunch": "https://techcrunch.com/feed/",
+    # "The Verge": "https://www.theverge.com/rss/index.xml",
+    # "ESPN": "https://www.espn.com/espn/rss/news",
+    # "Yahoo Sports": "https://sports.yahoo.com/rss/",
+    # "WSJ Opinion": "https://feeds.content.dowjones.io/public/rss/RSSOpinion", 
+    # "WSJ WORLD": "https://feeds.content.dowjones.io/public/rss/RSSWorldNews", 
+    # "WSJ US BUSINESS": "https://feeds.content.dowjones.io/public/rss/WSJcomUSBusiness", 
+    # "WSJ MARKETS": "https://feeds.content.dowjones.io/public/rss/RSSMarketsMain", 
+    # "WSJ TECH": "https://feeds.content.dowjones.io/public/rss/RSSWSJD", 
+    # "WSJ US": "https://feeds.content.dowjones.io/public/rss/RSSUSnews", 
+    # "WSJ POLITICS": "https://feeds.content.dowjones.io/public/rss/socialpoliticsfeed", 
+    # "WSJ ECONOMY": "https://feeds.content.dowjones.io/public/rss/socialeconomyfeed",
+    # "WSJ SPORTS": "https://feeds.content.dowjones.io/public/rss/rsssportsfeed"
 }
 
-# Maps topic buckets to trigger keywords.
-# A headline matching a bucket is only compared to markets in that same bucket.
-TOPIC_KEYWORDS = {
-    "politics":    ["president", "congress", "senate", "election", "vote", "trump", "biden",
-                    "harris", "democrat", "republican", "house", "white house", "governor",
-                    "legislation", "impeach", "cabinet", "veto", "executive", "administration",
-                    "polling", "approval", "campaign", "party", "nominee"],
-    "economy":     ["fed", "federal reserve", "rate", "inflation", "cpi", "gdp", "jobs",
-                    "unemployment", "recession", "fomc", "treasury", "debt", "tariff",
-                    "fiscal", "deficit", "spending", "budget", "economic", "economy"],
-    "crypto":      ["bitcoin", "btc", "ethereum", "eth", "crypto", "blockchain", "defi",
-                    "coinbase", "binance", "stablecoin", "solana", "xrp", "altcoin"],
-    "markets":     ["s&p", "nasdaq", "dow", "stock", "equity", "oil", "crude", "gold",
-                    "bond", "yield", "ipo", "earnings", "10-year", "market", "index",
-                    "futures", "rally", "selloff"],
-    "geopolitics": ["ukraine", "russia", "china", "taiwan", "israel", "iran", "nato",
-                    "war", "sanction", "missile", "nuclear", "ceasefire", "invasion",
-                    "military", "troops", "conflict", "peace", "treaty"],
-    "sports":      ["nfl", "nba", "mlb", "nhl", "super bowl", "playoffs", "championship",
-                    "fifa", "world cup", "oscar", "grammy", "emmy", "game", "season",
-                    "tournament", "draft"],
-    "tech":        ["ai", "openai", "google", "apple", "meta", "microsoft", "nvidia",
-                    "antitrust", "regulation", "elon musk", "spacex", "tesla", "chatgpt",
-                    "model", "chip", "semiconductor"],
-}
+# --- GLOBAL MODEL INIT ---
+print("🤖 Initializing Sentence Transformer...")
+model = SentenceTransformer(MODEL_NAME)
 
-STOPWORDS = {
-    "the", "a", "an", "is", "are", "was", "were", "will", "be", "to", "of", "in",
-    "on", "at", "by", "for", "with", "from", "that", "this", "it", "as", "its",
-    "has", "have", "had", "not", "but", "and", "or", "does", "do", "did", "can",
-    "could", "would", "should", "what", "when", "how", "who", "why", "which",
-    "says", "said", "new", "more", "after", "over", "than", "also", "into",
-    "its", "about", "up", "out", "just", "first", "may", "according"
-}
+# --- HELPER FUNCTIONS ---
 
-# High-signal proper nouns / entities — these are weighted extra heavily in matching
-ENTITY_TERMS = [
-    # People
-    "trump", "biden", "harris", "obama", "powell", "yellen", "zelensky", "putin",
-    "netanyahu", "xi", "modi", "macron", "musk", "altman", "zuckerberg", "cook",
-    # Orgs / places
-    "fed", "fomc", "nato", "un", "sec", "fbi", "cia", "doj", "supreme court",
-    "ukraine", "russia", "china", "taiwan", "israel", "iran", "north korea",
-    "bitcoin", "ethereum", "openai", "nvidia", "spacex", "tesla",
-    # Numbers and % — extracted dynamically
-]
+def ensure_directory(file_path):
+    """Creates the directory if it doesn't exist to prevent save errors."""
+    directory = os.path.dirname(file_path)
+    if directory and not os.path.exists(directory):
+        os.makedirs(directory, exist_ok=True)
+        print(f"📁 Created directory: {directory}")
 
+def is_open(m):
+    """Checks if a market is currently active/open."""
+    status = getattr(m, 'status', None)
+    if status is not None:
+        return str(status).lower() == 'active' # API usually returns 'active', checking safety
+    
+    # Fallback to date check
+    resolution_date = getattr(m, 'resolution_date', None)
+    if resolution_date is not None:
+        # PMXT often returns datetime objects, but if string, we might need parsing. 
+        # Assuming datetime object here based on your snippet.
+        if isinstance(resolution_date, str):
+            try:
+                resolution_date = pd.to_datetime(resolution_date).to_pydatetime()
+            except:
+                pass
+        if isinstance(resolution_date, datetime):
+            # Ensure timezone awareness for comparison
+            if resolution_date.tzinfo is None:
+                resolution_date = resolution_date.replace(tzinfo=timezone.utc)
+            return resolution_date > datetime.now(timezone.utc)
+    return True
 
-# ── TEXT UTILS ────────────────────────────────────────────────────────────────
+# --- MARKET INDEXING LOGIC (YOUR VERSION) ---
 
-def clean_html(text: str) -> str:
-    if not text: return ""
-    return " ".join(re.sub(r'<.*?>', '', text).split())
-
-def normalize(text: str) -> str:
-    """Lowercase, strip punctuation, remove stopwords."""
-    text = re.sub(r'[^\w\s%\.\-]', ' ', text.lower())
-    tokens = [w for w in text.split() if w not in STOPWORDS and len(w) > 2]
-    return " ".join(tokens)
-
-def extract_entities(text: str) -> list[str]:
-    """
-    Pull high-signal tokens: known entities + any numbers/percentages.
-    These are the words that should appear in both headline AND market title
-    if they're genuinely about the same event.
-    """
-    lower = text.lower()
-    found = []
-
-    # Known entity terms
-    for ent in ENTITY_TERMS:
-        if ent in lower:
-            found.append(ent)
-
-    # Numbers and percentages (e.g. "5%", "2.5", "100k", "$80")
-    numbers = re.findall(r'\b\d+(?:\.\d+)?(?:%|k|b|m)?\b', lower)
-    found.extend(numbers)
-
-    return list(set(found))
-
-def get_topics(text: str) -> set:
-    lower = text.lower()
-    matched = {t for t, kws in TOPIC_KEYWORDS.items() if any(kw in lower for kw in kws)}
-    return matched if matched else {"general"}
-
-def build_search_blob(market: dict) -> str:
-    """
-    Combine all useful market fields into one normalized string.
-    We also append entity terms multiple times to upweight them in fuzzy scoring.
-    """
-    raw = (
-        f"{market.get('title', '')} "
-        f"{market.get('subtitle', '')} "
-        f"{market.get('event_ticker', '')} "
-        f"{market.get('category', '')} "
-        f"{market.get('yes_sub_title', '')} "
-        f"{market.get('no_sub_title', '')}"
-    )
-    normalized = normalize(clean_html(raw))
-
-    # Repeat entity terms so they score higher in token overlap
-    entities = extract_entities(raw)
-    boosted  = normalized + " " + " ".join(entities * 2)
-
-    return boosted
-
-
-# ── KALSHI SYNC ───────────────────────────────────────────────────────────────
-
-def fetch_kalshi_markets() -> list[dict]:
-    """Single call for top MARKET_LIMIT open markets. Fast, no pagination needed."""
-    print(f"🔄 Fetching top {MARKET_LIMIT} Kalshi markets...")
+def build_and_save_index():
+    print("📉 Fetching open markets from Kalshi...")
     try:
-        resp = requests.get(
-            KALSHI_API_BASE + f"/markets?status=open&limit={MARKET_LIMIT}",
-            timeout=15
-        )
-        resp.raise_for_status()
-        markets = resp.json().get("markets", [])
+        kalshi = pmxt.Kalshi()
+        # Try fetching with status filter first
+        try:
+            markets = kalshi.fetch_markets(status='active', limit=3000)
+        except TypeError:
+            markets = kalshi.fetch_markets(limit=3000)
     except Exception as e:
-        print(f"⚠️  Kalshi API failed: {e}")
+        print(f"❌ API Error: {e}")
+        return [], {}, None
+
+    # Filter for Open Markets
+    open_markets = [m for m in markets if is_open(m)]
+    print(f"✅ Found {len(open_markets)} open markets (out of {len(markets)} total)")
+
+    market_data = {}
+    market_combined_texts = []
+    valid_ids = []
+
+    for m in open_markets:
+        try:
+            outcome_labels = " | ".join(o.label for o in m.outcomes if o.label)
+            combined_text = f"{m.title} — {outcome_labels}" if outcome_labels else m.title
+
+            # Use dedicated ticker field if available, fall back to market_id
+            ticker = getattr(m, 'ticker', None) or m.market_id
+            # Clean ticker if it's the long ID (take first 8 chars for display if it looks like a hash)
+            display_ticker = ticker
+            if len(str(ticker)) > 20 and "-" not in str(ticker): 
+                 display_ticker = str(ticker)[:10] + "..."
+
+            market_data[m.market_id] = {
+                "title": m.title,
+                "ticker": display_ticker,
+                "combined_text": combined_text,
+                "outcomes": [o.label for o in m.outcomes if o.label]
+            }
+            valid_ids.append(m.market_id)
+            market_combined_texts.append(combined_text)
+        except AttributeError:
+            pass
+
+    if not valid_ids:
+        print("⚠️ No valid markets found.")
+        return [], {}, None
+
+    print(f"🧠 Embedding {len(valid_ids)} markets...")
+    market_embeddings = model.encode(market_combined_texts, convert_to_tensor=True)
+
+    # Save
+    ensure_directory(EMBEDDINGS_FILE)
+    ensure_directory(METADATA_FILE)
+    
+    torch.save(market_embeddings, EMBEDDINGS_FILE)
+    with open(METADATA_FILE, "w") as f:
+        json.dump({"market_ids": valid_ids, "market_data": market_data}, f)
+
+    print(f"💾 Saved index to disk.")
+    return valid_ids, market_data, market_embeddings
+
+def load_index():
+    """Load pre-computed embeddings and metadata from disk."""
+    if not os.path.exists(EMBEDDINGS_FILE) or not os.path.exists(METADATA_FILE):
+        return build_and_save_index()
+
+    print("📂 Loading index from disk...")
+    try:
+        market_embeddings = torch.load(EMBEDDINGS_FILE)
+        with open(METADATA_FILE, "r") as f:
+            meta = json.load(f)
+        return meta["market_ids"], meta["market_data"], market_embeddings
+    except Exception:
+        print("❌ Load failed. Rebuilding...")
+        return build_and_save_index()
+
+def get_market_matches(headline, market_ids, market_data, market_embeddings, top_k=3):
+    """Return top matches for the RSS Loop."""
+    if market_embeddings is None or len(market_ids) == 0:
         return []
 
-    catalog = []
-    for m in markets:
-        blob = build_search_blob(m)
-        catalog.append({
-            "ticker":      m["ticker"],
-            "full_title":  m.get("title", ""),
-            "search_text": blob,
-            "topics":      get_topics(blob),
-            "entities":    set(extract_entities(blob)),
+    headline_embedding = model.encode(headline, convert_to_tensor=True)
+    cos_scores = util.cos_sim(headline_embedding, market_embeddings)[0]
+    top_results = torch.topk(cos_scores, k=top_k)
+
+    matches = []
+    for score, idx in zip(top_results[0], top_results[1]):
+        m_id = market_ids[idx]
+        info = market_data[m_id]
+        matches.append({
+            "ticker": info['ticker'],
+            "title": info['title'],
+            "score": float(score),
+            "id": m_id
         })
+    return matches
 
-    print(f"✅ Loaded {len(catalog)} markets.")
-    return catalog
+# --- RSS LOGGING LOOP ---
 
-def build_topic_index(catalog: list[dict]) -> dict:
-    index = {}
-    for item in catalog:
-        for topic in item["topics"]:
-            index.setdefault(topic, []).append(item)
-    return index
-
-
-# ── MATCHING ──────────────────────────────────────────────────────────────────
-
-def find_best_match(
-    headline: str,
-    topic_index: dict,
-    catalog: list[dict]
-) -> tuple[str | None, float]:
-
-    if not catalog:
-        return None, 0
-
-    normalized_hl   = normalize(headline)
-    headline_topics = get_topics(headline)
-    headline_entities = set(extract_entities(headline))
-
-    # ── Stage 1: topic pre-filter ──
-    candidate_set = set()
-    candidates    = []
-    for topic in headline_topics:
-        for item in topic_index.get(topic, []):
-            if item["ticker"] not in candidate_set:
-                candidate_set.add(item["ticker"])
-                candidates.append(item)
-    for item in topic_index.get("general", []):
-        if item["ticker"] not in candidate_set:
-            candidate_set.add(item["ticker"])
-            candidates.append(item)
-
-    if len(candidates) < 20:
-        candidates = catalog   # fallback to full list
-
-    # ── Stage 2: entity pre-filter (if headline has known entities) ──
-    # Prioritise markets that share at least one entity with the headline
-    if headline_entities:
-        entity_matches = [c for c in candidates if c["entities"] & headline_entities]
-        if len(entity_matches) >= 5:
-            candidates = entity_matches   # tighter pool, much higher precision
-
-    search_texts = [c["search_text"] for c in candidates]
-
-    # ── Stage 3: multi-metric fuzzy scoring ──
-    match_tsr  = process.extractOne(normalized_hl, search_texts, scorer=fuzz.token_set_ratio)
-    match_pr   = process.extractOne(normalized_hl, search_texts, scorer=fuzz.partial_ratio)
-    match_tsort = process.extractOne(normalized_hl, search_texts, scorer=fuzz.token_sort_ratio)
-
-    scores: dict[str, float] = {}   # ticker → best weighted score
-
-    for match, weight in [(match_tsr, 0.5), (match_pr, 0.3), (match_tsort, 0.2)]:
-        if not match:
-            continue
-        _, score, idx = match
-        ticker = candidates[idx]["ticker"]
-        scores[ticker] = scores.get(ticker, 0) + score * weight
-
-    if not scores:
-        return None, 0
-
-    best_ticker = max(scores, key=lambda t: scores[t])
-    # Normalise back to 0–100
-    total_weight = (0.5 if match_tsr else 0) + (0.3 if match_pr else 0) + (0.2 if match_tsort else 0)
-    final_score  = scores[best_ticker] / total_weight if total_weight else 0
-
-    # ── Entity bonus: reward shared proper nouns ──
-    best_market  = next(c for c in candidates if c["ticker"] == best_ticker)
-    shared_ents  = headline_entities & best_market["entities"]
-    entity_bonus = min(len(shared_ents) * 3, 10)   # up to +10 points
-    final_score  = min(final_score + entity_bonus, 100)
-
-    if final_score >= MATCH_THRESHOLD:
-        return best_ticker, round(final_score, 2)
-
-    return None, 0
-
-
-# ── STATE ─────────────────────────────────────────────────────────────────────
-
-def get_processed_links() -> set:
+def get_processed_links():
     if os.path.exists(CSV_FILE):
         try:
             df = pd.read_csv(CSV_FILE)
             if 'link' in df.columns:
                 return set(df['link'].astype(str).tolist())
-        except Exception as e:
-            print(f"Error loading CSV state: {e}")
+        except Exception:
+            pass
     return set()
 
-
-# ── MAIN LOOP ─────────────────────────────────────────────────────────────────
+def clean_text(text):
+    if not text: return ""
+    text = re.sub(r'<.*?>', '', text)
+    return " ".join(text.split()).strip()
 
 def run_loop():
-    seen_links  = get_processed_links()
-    catalog     = fetch_kalshi_markets()
-    topic_index = build_topic_index(catalog)
-    last_sync   = time.time()
-
-    print(f"🚀 Monitoring {len(NEWS_FEEDS)} feeds | "
-          f"{len(catalog)} markets | "
-          f"{len(seen_links)} links already seen\n")
+    # 1. Load Data
+    market_ids, market_data, market_embeddings = load_index()
+    
+    seen_links = get_processed_links()
+    print(f"🚀 Monitoring {len(NEWS_FEEDS)} feeds + Real-time Semantic Matching.")
 
     while True:
-        # Refresh catalog every 15 min
-        if time.time() - last_sync > 900:
-            catalog     = fetch_kalshi_markets()
-            topic_index = build_topic_index(catalog)
-            last_sync   = time.time()
-
-        new_entries = []
-        now    = datetime.now(timezone.utc)
-        cutoff = now - timedelta(days=2)
+        pending_articles = []
+        now = datetime.now(timezone.utc)
+        cutoff = (now - timedelta(days=2))
 
         for source, url in NEWS_FEEDS.items():
             try:
                 feed = feedparser.parse(url)
-            except Exception as e:
-                print(f"⚠️  Feed error [{source}]: {e}")
+            except Exception:
                 continue
 
             for entry in feed.entries:
                 link = getattr(entry, 'link', None)
                 if not link or link in seen_links:
                     continue
-
+                
                 try:
                     raw_date = entry.get('published', entry.get('updated', None))
-                    if not raw_date:
-                        continue
+                    if not raw_date: continue
                     dt = pd.to_datetime(raw_date, utc=True)
-                    if dt < cutoff:
-                        continue
+                    if dt < cutoff: continue
+                    
+                    headline = clean_text(entry.title)
+                    body_raw = entry.content[0].value if 'content' in entry else entry.get('summary', '')
+                    body_clean = clean_text(body_raw)
 
-                    ticker, confidence = find_best_match(entry.title, topic_index, catalog)
+                    # --- MATCHING LOGIC ---
+                    matches = get_market_matches(headline, market_ids, market_data, market_embeddings)
+                    
+                    article_data = {
+                        "source": source,
+                        "headline": headline,
+                        "content_header": body_clean[:500],
+                        "date": dt.strftime('%Y-%m-%d %H:%M:%S'),
+                        "timestamp": int(dt.timestamp()),
+                        "link": link,
+                        
+                        # Top 3 Matches
+                        "Match_1_Ticker": matches[0]['ticker'] if len(matches) > 0 else None,
+                        "Match_1_Score":  round(matches[0]['score'], 4) if len(matches) > 0 else None,
+                        
+                        "Match_2_Ticker": matches[1]['ticker'] if len(matches) > 1 else None,
+                        "Match_2_Score":  round(matches[1]['score'], 4) if len(matches) > 1 else None,
+                        
+                        "Match_3_Ticker": matches[2]['ticker'] if len(matches) > 2 else None,
+                        "Match_3_Score":  round(matches[2]['score'], 4) if len(matches) > 2 else None,
+                    }
 
-                    body_raw   = entry.content[0].value if 'content' in entry else entry.get('summary', '')
-                    body_clean = clean_html(body_raw)[:500]
-
-                    new_entries.append({
-                        "source":           source,
-                        "headline":         entry.title,
-                        "matched_ticker":   ticker,
-                        "match_confidence": confidence,
-                        "content_header":   body_clean,
-                        "date":             dt.strftime('%Y-%m-%d %H:%M:%S'),
-                        "timestamp":        int(dt.timestamp()),
-                        "link":             link,
-                    })
+                    pending_articles.append(article_data)
                     seen_links.add(link)
-
                 except Exception:
                     continue
 
-        if new_entries:
-            new_df      = pd.DataFrame(new_entries)
+        if pending_articles:
+            new_df = pd.DataFrame(pending_articles)
             file_exists = os.path.isfile(CSV_FILE)
             new_df.to_csv(CSV_FILE, mode='a', index=False, header=not file_exists)
-
-            matches = new_df[new_df['matched_ticker'].notna()]
-            print(f"[{datetime.now().strftime('%H:%M:%S')}] "
-                  f"New: {len(new_df)} | Matched: {len(matches)}")
-
-            if not matches.empty:
-                print(matches[['source', 'headline', 'matched_ticker', 'match_confidence']]
-                      .to_string(index=False))
-                print()
+            
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] Logged {len(pending_articles)} new articles.")
+            print(new_df[['headline', 'Match_1_Ticker', 'Match_1_Score']].head(3).to_string(index=False))
         else:
             print(".", end="", flush=True)
 
         time.sleep(POLL_INTERVAL)
 
-
 if __name__ == "__main__":
-    try:
-        run_loop()
-    except KeyboardInterrupt:
-        print("\n🛑 Stopped.")
+    run_loop()
