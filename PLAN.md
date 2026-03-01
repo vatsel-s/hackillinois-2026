@@ -16,7 +16,7 @@ Automatically trade Kalshi prediction market contracts by detecting sentiment in
 │  poll_news()    ───►  score_and_write()  ───► find_ticker()     │
 │  30+ RSS feeds        Modal GPU (FinBERT)     Kalshi REST API   │
 │  → new articles       → label/score/signal    → best ticker     │
-│                       → appends to CSV        → side (yes/no)  │
+│                       → appends to CSV        → side (yes/no)   │
 │                                                    │            │
 │                                                    ▼            │
 │                              Kalshi/kalshi_order_executor.py    │
