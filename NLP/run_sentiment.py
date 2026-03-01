@@ -18,6 +18,22 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from NLP.sentiment import score_and_write
 
 
+def clear_processed(csv_path: str, n_processed: int):
+    """Remove the first n_processed rows from csv_path.
+
+    Rows appended by the news runner while scoring was in progress are preserved.
+    """
+    try:
+        with open(csv_path, "r", newline="") as f:
+            lines = f.readlines()
+        remaining = lines[n_processed:]
+        with open(csv_path, "w", newline="") as f:
+            f.writelines(remaining)
+        print(f"Cleared {n_processed} processed rows ({len(remaining)} remaining in {csv_path})")
+    except FileNotFoundError:
+        pass
+
+
 def load_articles(csv_path: str) -> list[dict]:
     with open(csv_path, newline="") as f:
         rows = list(csv.DictReader(f))
@@ -70,6 +86,8 @@ def main():
     print(f"Total: {total_articles} articles in {total:.2f}s "
           f"({total / total_articles:.3f}s/article)")
     print(f"Results written to: sentiment_output.csv")
+
+    clear_processed(args.csv, total_articles)
 
 
 if __name__ == "__main__":
