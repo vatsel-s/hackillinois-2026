@@ -43,9 +43,10 @@ def extract_clean_df():
     clean_df = df[[ "timestamp", "title", "themes"]].dropna(subset=["title"])
     return clean_df
 
-def df_to_csv(): 
+def df_to_csv():
     df = extract_clean_df()
     df.to_csv(CSV_FILE_PATH, mode='a', header=False, index=False)
 
 
-df_to_csv()
+if __name__ == "__main__":
+    df_to_csv()

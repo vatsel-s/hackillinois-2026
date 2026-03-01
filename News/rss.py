@@ -3,7 +3,11 @@ import pandas as pd
 import time
 import os
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
+from dateutil import parser as dateutil_parser
+import pytz
+
+EST = pytz.timezone("America/New_York")
 
 CSV_FILE_PATH = "input.csv"
 
@@ -78,8 +82,8 @@ def clean_html(text):
 
 def poll_news(seen_links):
     new_articles = []
-    now = datetime.now(timezone.utc)
-    cutoff = (now - timedelta(days=2))
+    now = datetime.now(EST)
+    cutoff = now - timedelta(days=2)
 
     for source_name, url in NEWS_FEEDS.items():
         feed = feedparser.parse(url)
@@ -93,7 +97,7 @@ def poll_news(seen_links):
             if not raw_date: continue
                 
             try:
-                dt_obj = pd.to_datetime(raw_date, utc=True)
+                dt_obj = dateutil_parser.parse(raw_date).astimezone(EST)
                 
                 if dt_obj >= cutoff:
                     # Logic to find the best content/summary snippet
@@ -102,8 +106,8 @@ def poll_news(seen_links):
 
                     new_articles.append({
                         "timestamp": int(dt_obj.timestamp()),
-                        "headline": entry.title,
-                        "content_header": content_clean[:500].strip(),
+                        "title": entry.title,
+                        "content": content_clean[:500].strip(),
                     })
                     
                     seen_links.add(link)
