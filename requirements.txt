@@ -1,4 +1,5 @@
 websocket
+websockets
 modal
 python-dotenv
 cryptography
@@ -7,3 +8,6 @@ torch
 feedparser
 pandas
 requests
+fastapi
+uvicorn[standard]
+pydantic
