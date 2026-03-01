@@ -5,7 +5,7 @@ import os
 import re
 from datetime import datetime, timedelta, timezone
 
-CSV_FILE_PATH = "output.csv"
+CSV_FILE_PATH = "input.csv"
 
 # Filtered Source List (Reuters and AP removed)
 NEWS_FEEDS = {

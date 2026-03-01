@@ -5,7 +5,7 @@ import io
 from datetime import datetime, timezone
 import re
 
-CSV_FILE_PATH = "output.csv"
+CSV_FILE_PATH = "input.csv"
 
 def get_latest_gkg():
     # GDELT updates every 15 min at :00, :15, :30, :45
